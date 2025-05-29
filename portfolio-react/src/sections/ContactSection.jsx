@@ -1,8 +1,19 @@
 // src/sections/ContactSection.jsx
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, useInView } from 'framer-motion'
+import emailjs from '@emailjs/browser'
 
 const ContactSection = () => {
+  // EmailJS Configuration (embedded directly)
+  const EMAIL_CONFIG = {
+    serviceId: 'service_qede2b7',
+    templateId: {
+      admin: 'template_w8ltyde',        // Template for you to receive user info
+      autoReply: 'template_z4f5cel'    // Template for user thank you message
+    },
+    publicKey: 'iUtUq3faFI-b5105a'
+  }
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -22,7 +33,183 @@ const ContactSection = () => {
   const sectionRef = useRef(null)
   const isInView = useInView(sectionRef, { once: true, margin: "-100px 0px" })
 
-  // Validation rules - useMemo pour éviter les re-créations
+  // Initialize EmailJS
+  useEffect(() => {
+    const initEmailJS = () => {
+      try {
+        emailjs.init(EMAIL_CONFIG.publicKey)
+        console.log('✅ EmailJS initialized successfully')
+      } catch (error) {
+        console.error('❌ EmailJS initialization error:', error)
+      }
+    }
+    
+    initEmailJS()
+  }, [])
+
+  // Utility function to get project type label
+  const getProjectTypeLabel = (projectType) => {
+    const types = {
+      'web-development': 'Développement Web',
+      'mobile-app': 'Application Mobile',
+      'e-commerce': 'E-commerce',
+      'redesign': 'Refonte de site',
+      'consulting': 'Conseil',
+      'maintenance': 'Maintenance',
+      'other': 'Autre'
+    }
+    return types[projectType] || 'Non spécifié'
+  }
+
+  // Send email to admin (you)
+  const sendEmailToAdmin = async (formData) => {
+    try {
+      const templateParams = {
+        // User information
+        from_name: formData.name,
+        from_email: formData.email,
+        phone: formData.phone || 'Non renseigné',
+        company: formData.company || 'Non renseigné',
+        project_type: getProjectTypeLabel(formData.projectType),
+        
+        // Message
+        subject: formData.subject,
+        message: formData.message,
+        
+        // System information
+        sent_date: new Date().toLocaleDateString('fr-FR', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        
+        // Your email (destination)
+        to_email: 'mohammedbouzi177@gmail.com',
+        to_name: 'Mouhamed Bouzyane'
+      }
+
+      const result = await emailjs.send(
+        EMAIL_CONFIG.serviceId,
+        EMAIL_CONFIG.templateId.admin,
+        templateParams
+      )
+
+      console.log('✅ Admin email sent:', result)
+      return { success: true, data: result }
+    } catch (error) {
+      console.error('❌ Admin email error:', error)
+      return { success: false, error: error.text || error.message }
+    }
+  }
+
+  // Send thank you email to user
+  const sendAutoReplyToUser = async (formData) => {
+    try {
+      const templateParams = {
+        // User information
+        to_name: formData.name,
+        to_email: formData.email,
+        
+        // Original message info
+        original_subject: formData.subject,
+        project_type: getProjectTypeLabel(formData.projectType),
+        
+        // Confirmation info
+        confirmation_date: new Date().toLocaleDateString('fr-FR', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        
+        // Your contact information
+        admin_name: 'Mouhamed Bouzyane',
+        admin_email: 'mohammedbouzi177@gmail.com',
+        admin_phone: '+212 690 815 605',
+        
+        // Custom message
+        response_time: '24-48 heures',
+        website_url: window.location.origin
+      }
+
+      const result = await emailjs.send(
+        EMAIL_CONFIG.serviceId,
+        EMAIL_CONFIG.templateId.autoReply,
+        templateParams
+      )
+
+      console.log('✅ User confirmation email sent:', result)
+      return { success: true, data: result }
+    } catch (error) {
+      console.error('❌ User confirmation email error:', error)
+      return { success: false, error: error.text || error.message }
+    }
+  }
+
+  // Main function to send both emails
+  const sendContactEmails = async (formData) => {
+    try {
+      console.log('📧 Sending contact emails...')
+      
+      // Send both emails in parallel
+      const [adminResult, userResult] = await Promise.allSettled([
+        sendEmailToAdmin(formData),
+        sendAutoReplyToUser(formData)
+      ])
+
+      // Analyze results
+      const results = {
+        admin: adminResult.status === 'fulfilled' ? adminResult.value : { success: false, error: adminResult.reason },
+        user: userResult.status === 'fulfilled' ? userResult.value : { success: false, error: userResult.reason }
+      }
+
+      // Check overall success
+      const adminSuccess = results.admin.success
+      const userSuccess = results.user.success
+
+      if (adminSuccess && userSuccess) {
+        console.log('✅ All emails sent successfully')
+        return {
+          success: true,
+          message: 'Votre message a été envoyé avec succès ! Vous allez recevoir une confirmation par email.',
+          details: results
+        }
+      } else if (adminSuccess && !userSuccess) {
+        console.log('⚠️ Admin email sent, but user confirmation failed')
+        return {
+          success: true,
+          message: 'Votre message a été envoyé avec succès ! (Note: la confirmation automatique pourrait avoir un délai)',
+          details: results
+        }
+      } else if (!adminSuccess && userSuccess) {
+        console.log('⚠️ User confirmation sent, but admin email failed')
+        return {
+          success: false,
+          message: 'Une erreur est survenue lors de l\'envoi. Veuillez réessayer ou me contacter directement.',
+          details: results
+        }
+      } else {
+        console.log('❌ Both emails failed')
+        return {
+          success: false,
+          message: 'Une erreur est survenue lors de l\'envoi. Veuillez réessayer ou me contacter directement par email.',
+          details: results
+        }
+      }
+    } catch (error) {
+      console.error('❌ General email sending error:', error)
+      return {
+        success: false,
+        message: 'Une erreur technique est survenue. Veuillez réessayer plus tard.',
+        error: error.message
+      }
+    }
+  }
+
+  // Validation rules - useMemo to avoid re-creations
   const validationRules = useMemo(() => ({
     name: {
       required: true,
@@ -82,7 +269,7 @@ const ContactSection = () => {
     }
   }), [])
 
-  // Project types - useMemo pour éviter les re-créations
+  // Project types - useMemo to avoid re-creations
   const projectTypes = useMemo(() => [
     { value: 'web-development', label: 'Développement Web' },
     { value: 'mobile-app', label: 'Application Mobile' },
@@ -93,7 +280,7 @@ const ContactSection = () => {
     { value: 'other', label: 'Autre' }
   ], [])
 
-  // Validate single field - useCallback pour éviter les re-créations
+  // Validate single field - useCallback to avoid re-creations
   const validateField = useCallback((name, value) => {
     const rules = validationRules[name]
     if (!rules) return null
@@ -142,7 +329,7 @@ const ContactSection = () => {
     return { errors: newErrors, isValid: valid }
   }, [formData, validateField, validationRules])
 
-  // Handle input change - useCallback pour optimiser les performances
+  // Handle input change - useCallback for performance optimization
   const handleChange = useCallback((e) => {
     const { name, value } = e.target
     
@@ -168,13 +355,13 @@ const ContactSection = () => {
     setErrors(prev => ({ ...prev, [name]: error }))
   }, [validateField])
 
-  // Check form validity - useMemo pour calculer seulement quand nécessaire
+  // Check form validity - useMemo to calculate only when necessary
   const isFormValid = useMemo(() => {
     const { isValid } = validateForm()
     return isValid
   }, [validateForm])
 
-  // Handle form submission
+  // Handle form submission with EmailJS
   const handleSubmit = async (e) => {
     e.preventDefault()
     
@@ -210,52 +397,52 @@ const ContactSection = () => {
     setSubmitStatus(null)
     
     try {
-      // Simulate API call - replace with actual implementation
-      const response = await fetch('/api/contact', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      })
+      console.log('📧 Sending contact form...', formData)
       
-      if (!response.ok) {
-        throw new Error('Erreur lors de l\'envoi du message')
+      // Send emails via EmailJS
+      const result = await sendContactEmails(formData)
+      
+      if (result.success) {
+        setSubmitStatus({
+          success: true,
+          message: result.message
+        })
+        
+        // Reset form after success
+        setFormData({
+          name: '',
+          email: '',
+          phone: '',
+          subject: '',
+          message: '',
+          company: '',
+          projectType: 'web-development'
+        })
+        setErrors({})
+        setTouched({})
+        
+        console.log('✅ Form sent successfully:', result.details)
+      } else {
+        setSubmitStatus({
+          success: false,
+          message: result.message
+        })
+        console.error('❌ Sending error:', result.error)
       }
       
-      const result = await response.json()
-      
-      setSubmitStatus({
-        success: true,
-        message: 'Votre message a été envoyé avec succès ! Je vous contacterai dès que possible.'
-      })
-      
-      // Reset form
-      setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        subject: '',
-        message: '',
-        company: '',
-        projectType: 'web-development'
-      })
-      setErrors({})
-      setTouched({})
-      
     } catch (error) {
-      console.error('Erreur envoi formulaire:', error)
+      console.error('❌ Unexpected error while sending form:', error)
       setSubmitStatus({
         success: false,
-        message: 'Une erreur est survenue lors de l\'envoi. Veuillez réessayer plus tard.'
+        message: 'Une erreur technique inattendue est survenue. Veuillez réessayer ou me contacter directement.'
       })
     } finally {
       setIsSubmitting(false)
       
-      // Auto-clear status after 5 seconds
+      // Auto-clear status after 8 seconds
       setTimeout(() => {
         setSubmitStatus(null)
-      }, 5000)
+      }, 8000)
     }
   }
 
@@ -407,7 +594,7 @@ const ContactSection = () => {
                 Envoyez-moi un message
               </h3>
               
-              {/* Status message */}
+              {/* Enhanced status message */}
               {submitStatus && (
                 <motion.div 
                   initial={{ opacity: 0, y: -10 }}
@@ -418,17 +605,29 @@ const ContactSection = () => {
                       : 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800'
                   }`}
                 >
-                  <div className="flex items-center">
+                  <div className="flex items-start">
                     {submitStatus.success ? (
-                      <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
+                      <div className="flex-shrink-0">
+                        <svg className="w-5 h-5 mr-3 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
                     ) : (
-                      <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
+                      <div className="flex-shrink-0">
+                        <svg className="w-5 h-5 mr-3 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </div>
                     )}
-                    {submitStatus.message}
+                    <div>
+                      <p className="font-medium">{submitStatus.success ? 'Message envoyé !' : 'Erreur d\'envoi'}</p>
+                      <p className="mt-1">{submitStatus.message}</p>
+                      {submitStatus.success && (
+                        <p className="mt-2 text-sm opacity-80">
+                          📧 Vous devriez recevoir un email de confirmation dans quelques minutes.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -457,8 +656,7 @@ const ContactSection = () => {
                         } bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2`}
                         placeholder="Votre nom et prénom"
                         required
-                        aria-invalid={errors.name && touched.name}
-                        aria-describedby={errors.name && touched.name ? "name-error" : undefined}
+                        disabled={isSubmitting}
                       />
                       
                       {/* Success/Error icons */}
@@ -479,10 +677,8 @@ const ContactSection = () => {
                       )}
                     </div>
                     
-                    {/* Error message */}
                     {errors.name && touched.name && (
                       <motion.p 
-                        id="name-error"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="mt-2 text-sm text-red-600 dark:text-red-400"
@@ -514,11 +710,9 @@ const ContactSection = () => {
                         } bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2`}
                         placeholder="votre@email.com"
                         required
-                        aria-invalid={errors.email && touched.email}
-                        aria-describedby={errors.email && touched.email ? "email-error" : undefined}
+                        disabled={isSubmitting}
                       />
                       
-                      {/* Success/Error icons */}
                       {touched.email && !errors.email && formData.email && (
                         <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                           <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
@@ -536,10 +730,8 @@ const ContactSection = () => {
                       )}
                     </div>
                     
-                    {/* Error message */}
                     {errors.email && touched.email && (
                       <motion.p 
-                        id="email-error"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="mt-2 text-sm text-red-600 dark:text-red-400"
@@ -556,48 +748,19 @@ const ContactSection = () => {
                     <label htmlFor="phone" className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
                       Téléphone
                     </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        id="phone"
-                        name="phone"
-                        value={formData.phone}
-                        onChange={handleChange}
-                        onBlur={handleBlur}
-                        className={`w-full px-4 py-3 rounded-lg border transition-all duration-200 ${
-                          errors.phone && touched.phone 
-                            ? 'border-red-500 focus:ring-red-500 focus:border-red-500' 
-                            : touched.phone && !errors.phone && formData.phone
-                              ? 'border-green-500 focus:ring-green-500 focus:border-green-500'
-                              : 'border-secondary-200 dark:border-secondary-700 focus:ring-primary-500 focus:border-primary-500'
-                        } bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2`}
-                        placeholder="+212 6XX XXX XXX"
-                        aria-invalid={errors.phone && touched.phone}
-                        aria-describedby={errors.phone && touched.phone ? "phone-error" : undefined}
-                      />
-                      
-                      {/* Success/Error icons */}
-                      {touched.phone && !errors.phone && formData.phone && (
-                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                          <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                      )}
-                      
-                      {errors.phone && touched.phone && (
-                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                          <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Error message */}
+                    <input
+                      type="tel"
+                      id="phone"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className="w-full px-4 py-3 rounded-lg border border-secondary-200 dark:border-secondary-700 bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                      placeholder="+212 6XX XXX XXX"
+                      disabled={isSubmitting}
+                    />
                     {errors.phone && touched.phone && (
                       <motion.p 
-                        id="phone-error"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="mt-2 text-sm text-red-600 dark:text-red-400"
@@ -612,77 +775,41 @@ const ContactSection = () => {
                     <label htmlFor="company" className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
                       Entreprise
                     </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        id="company"
-                        name="company"
-                        value={formData.company}
-                        onChange={handleChange}
-                        onBlur={handleBlur}
-                        className={`w-full px-4 py-3 rounded-lg border transition-all duration-200 ${
-                          errors.company && touched.company 
-                            ? 'border-red-500 focus:ring-red-500 focus:border-red-500' 
-                            : touched.company && !errors.company && formData.company
-                              ? 'border-green-500 focus:ring-green-500 focus:border-green-500'
-                              : 'border-secondary-200 dark:border-secondary-700 focus:ring-primary-500 focus:border-primary-500'
-                        } bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2`}
-                        placeholder="Nom de votre entreprise"
-                        aria-invalid={errors.company && touched.company}
-                        aria-describedby={errors.company && touched.company ? "company-error" : undefined}
-                      />
-                      
-                      {/* Success/Error icons */}
-                      {touched.company && !errors.company && formData.company && (
-                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                          <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                      )}
-                      
-                      {errors.company && touched.company && (
-                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                          <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Error message */}
-                    {errors.company && touched.company && (
-                      <motion.p 
-                        id="company-error"
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="mt-2 text-sm text-red-600 dark:text-red-400"
-                      >
-                        {errors.company}
-                      </motion.p>
-                    )}
+                    <input
+                      type="text"
+                      id="company"
+                      name="company"
+                      value={formData.company}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className="w-full px-4 py-3 rounded-lg border border-secondary-200 dark:border-secondary-700 bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                      placeholder="Nom de votre entreprise"
+                      disabled={isSubmitting}
+                    />
                   </div>
                 </div>
                 
                 {/* Project Type Select */}
-                <div className="mb-6">
-                  <label htmlFor="projectType" className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
-                    Type de projet
-                  </label>
-                  <select
-                    id="projectType"
-                    name="projectType"
-                    value={formData.projectType}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 rounded-lg border border-secondary-200 dark:border-secondary-700 bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
-                  >
-                    {projectTypes.map(type => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {!isSubmitting && (
+                  <div className="mb-6">
+                    <label htmlFor="projectType" className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
+                      Type de projet
+                    </label>
+                    <select
+                      id="projectType"
+                      name="projectType"
+                      value={formData.projectType}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 rounded-lg border border-secondary-200 dark:border-secondary-700 bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                    >
+                      {projectTypes.map(type => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 
                 {/* Subject Input */}
                 <div className="mb-6">
@@ -700,38 +827,16 @@ const ContactSection = () => {
                       className={`w-full px-4 py-3 rounded-lg border transition-all duration-200 ${
                         errors.subject && touched.subject 
                           ? 'border-red-500 focus:ring-red-500 focus:border-red-500' 
-                          : touched.subject && !errors.subject && formData.subject
-                            ? 'border-green-500 focus:ring-green-500 focus:border-green-500'
-                            : 'border-secondary-200 dark:border-secondary-700 focus:ring-primary-500 focus:border-primary-500'
+                          : 'border-secondary-200 dark:border-secondary-700 focus:ring-primary-500 focus:border-primary-500'
                       } bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2`}
                       placeholder="Objet de votre message"
                       required
-                      aria-invalid={errors.subject && touched.subject}
-                      aria-describedby={errors.subject && touched.subject ? "subject-error" : undefined}
+                      disabled={isSubmitting}
                     />
-                    
-                    {/* Success/Error icons */}
-                    {touched.subject && !errors.subject && formData.subject && (
-                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                        <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    )}
-                    
-                    {errors.subject && touched.subject && (
-                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                        <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    )}
                   </div>
                   
-                  {/* Error message */}
                   {errors.subject && touched.subject && (
                     <motion.p 
-                      id="subject-error"
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="mt-2 text-sm text-red-600 dark:text-red-400"
@@ -757,38 +862,16 @@ const ContactSection = () => {
                       className={`w-full px-4 py-3 rounded-lg border transition-all duration-200 resize-none ${
                         errors.message && touched.message 
                           ? 'border-red-500 focus:ring-red-500 focus:border-red-500' 
-                          : touched.message && !errors.message && formData.message
-                            ? 'border-green-500 focus:ring-green-500 focus:border-green-500'
-                            : 'border-secondary-200 dark:border-secondary-700 focus:ring-primary-500 focus:border-primary-500'
+                          : 'border-secondary-200 dark:border-secondary-700 focus:ring-primary-500 focus:border-primary-500'
                       } bg-white dark:bg-secondary-900 text-secondary-900 dark:text-white focus:outline-none focus:ring-2`}
                       placeholder="Décrivez votre projet en détail..."
                       required
-                      aria-invalid={errors.message && touched.message}
-                      aria-describedby={errors.message && touched.message ? "message-error" : undefined}
+                      disabled={isSubmitting}
                     />
-                    
-                    {/* Success/Error icons */}
-                    {touched.message && !errors.message && formData.message && (
-                      <div className="absolute top-3 right-3 pointer-events-none">
-                        <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    )}
-                    
-                    {errors.message && touched.message && (
-                      <div className="absolute top-3 right-3 pointer-events-none">
-                        <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    )}
                   </div>
                   
-                  {/* Error message */}
                   {errors.message && touched.message && (
                     <motion.p 
-                      id="message-error"
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="mt-2 text-sm text-red-600 dark:text-red-400"
