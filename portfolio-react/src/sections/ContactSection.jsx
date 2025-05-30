@@ -87,7 +87,7 @@ const ContactSection = () => {
         
         // Your email (destination)
         to_email: 'mohammedbouzi177@gmail.com',
-        to_name: 'Mouhamed Bouzyane'
+        to_name: 'Mouhamed Bouzayane'
       }
 
       const result = await emailjs.send(

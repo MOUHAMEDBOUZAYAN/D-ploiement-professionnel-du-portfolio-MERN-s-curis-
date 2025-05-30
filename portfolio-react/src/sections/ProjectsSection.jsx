@@ -27,7 +27,7 @@ const ProjectsSection = () => {
       technologies: ["React", "Tailwind CSS", "Vite", "Framer Motion"],
       category: "frontend",
       githubLink: "https://github.com/MOUHAMEDBOUZAYAN/MY-PORTFOLIO",
-      liveLink: "#",
+      liveLink: "https://portfoliomohamedbouzayan.netlify.app/",
       featured: true
     },
     {
